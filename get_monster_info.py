@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 import unicodedata
 import string
 import math
+import datetime
 
 monster_urls = ['http://www.d20pfsrd.com/bestiary/monster-listings/animals/dinosaur/ankylosaurus',
 				'http://www.d20pfsrd.com/bestiary/monster-listings/outsiders/azata/bralani',
@@ -15,6 +16,7 @@ monster_urls = ['http://www.d20pfsrd.com/bestiary/monster-listings/animals/dinos
 				'http://www.d20pfsrd.com/bestiary/monster-listings/magical-beasts/unicorn',
 				'https://sites.google.com/site/pathfinderogc/bestiary/monster-listings/animals/cetacean/dolphin/orca',
 				]
+monster_urls = ['http://www.d20pfsrd.com/bestiary/monster-listings/magical-beasts/unicorn']
 
 all_headers = ['Init',
  'Senses',
@@ -296,6 +298,98 @@ data2 = ['Ankylosaurus',
  'Special Qualities',
  'stun.']
 
+class monster():
+	def __init__(self,page_dict):
+		''' Takes dict made from scraped table as input '''
+		for key, value in page_dict.items():
+			setattr(self, key, value)
+		print self.name
+		
+		# General splitting and formatting
+		self.format_ac()
+		self.get_perception()
+		self.strip_spaces()
+		
+		# Adjust things for Augmented Summons
+		self.get_hd()
+		self.adj_fort()
+		self.strip_spaces()
+		
+		# Adjust things with Celestial template
+		if hasattr(self,"Celestial"):
+			self.add_darkvision()
+			self.inc_cr()
+		
+		self.strip_spaces()
+		print self.__dict__.keys()
+
+	def format_ac(self):
+		# 15, touch 12, flat-footed 12; (+3 Dex, +3 natural, 1 size; +2 deflection vs. evil)
+		AC_details = self.AC.partition('(')[2].partition('; ')[2].strip(')')
+		self.AC = "{} ({})".format(self.AC.partition(';')[0],AC_details)
+		
+	def get_perception(self):
+		# low-light vision, scent; Perception +10
+		self.Perception = self.Senses.partition('+')[2] # 10
+		self.Senses = self.Senses.partition(';')[0] # low-light vision, scent
+		
+	def get_hd(self):
+		#  34 (4d10+12) -> 42 (4d10)
+		self.hit_die = int(self.hp.partition('(')[2].partition('d')[0].strip())
+		total_hp = int(self.hp.partition(' ')[0].strip())+self.hit_die*2 # adjust for increased Con
+		self.hp = "{} ({})".format(total_hp,self.hp.partition('(')[2].partition('+')[0])
+
+	def adj_fort(self):
+		self.Fort = int(self.Fort.strip())+2 # adjust for increased Con
+		
+	def add_darkvision(self):
+		# low-light vision, scent -> low-light vision, scent, darkvision
+		if 'darkvision' not in self.Senses:
+			self.Senses = '{}, darkvision'.format(self.Senses)
+
+	def inc_cr(self):
+		if self.hit_die > 4:
+			self.cr += 1 # CR increases by 1 if monster has 5+ HD
+
+	def add_sr(self):
+		pass
+	'''
+		if 'SR' not in m.keys() or int(m.SR) < m.cr+5:
+				m.SR = m.cr +5
+
+		if hit_die < 5:
+			try:
+				m.Resist = m.Resist + ', cold 5, acid 5, electricity 5'
+			except:
+				m.Resist = 'cold 5, acid 5, electricity 5'
+		elif hit_die < 11:
+			try:
+				m.Resist = m.Resist + ', cold 10, acid 10, electricity 10'
+			except:
+				m.Resist = 'cold 10, acid 10, electricity 10'
+			try:
+				m.DR = m.DR + ', 5/evil'
+			except:
+				m.DR = '5/evil'
+		else:
+			try:
+				m.Resist = m.Resist + ', cold 15, acid 15, electricity 15'
+			except:
+				m.Resist = 'cold 15, acid 15, electricity 15'
+			try:
+				m.DR = m.DR + ', 10/evil'
+			except:
+				m.DR = '10/evil'
+	'''
+
+	def strip_spaces(self):
+		# to avoid having to do this manually every time we create an attribute
+		for k,v in self.__dict__.items():
+			try: # avoid non-string types
+				self.k = v.strip()
+			except:
+				pass
+
 def scrape_url(url):
 	monster_info = dict()
 
@@ -348,108 +442,93 @@ def scrape_url(url):
 
 	return monster_info
 
+def process_attacks(attacks):
+	# Adjust attack and damage for Augmented Summons
+	each_attack = attacks.split(', ')
+	# warning: need to handle Weapon Finesse later
+	# warning: need to adjust for if only one attack
+	#		<b>Melee</b> gore +8 (1d8+4)
+	#	2 hooves +5 (1d3+2)
+	adj_attacks = []
+	for atk in each_attack:
+		breakdown = atk.split('+')
+		name = breakdown[0] #2 hooves
+		atk = int(breakdown[1].partition(' ')[0])+2 #5
+		dmg_die = breakdown[1].partition(' ')[2] #(1d3
+		dmg = int(breakdown[2].partition(')')[0])+2 #2
+		adj_attacks.append("{}+{} {}+{})".format(name,atk,dmg_die,dmg))
+	return "\n\t\t".join(adj_attacks)
+
 def print_card(m, spell_level):
-	if 'Celestial' in m.keys() and 'darkvision' not in m['Senses']:
-		m['Senses'] = '{}, darkvision;{}'.format(m['Senses'].partition(';')[0],m['Senses'].partition(';')[2])
+	print m.name
 	precombat = ['card:\n',
 				'	has styling: false\n',
 				'	notes:\n',
-				'	time created: 2016-08-14 22:46:26\n',
-				'	time modified: 2016-08-14 22:46:26\n',
-				'	name: {}\n'.format(m['name']),
+				'	time created: {}\n'.format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')), #2016-01-10 22:46:26
+				'	time modified: {}\n'.format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+				'	name: {}\n'.format(m.name),
 				'	level: {0}\n'.format(spell_level),
 				'	precombat:\n',
-				'		<b>Init</b> {}; {} {}\n'.format(m['Init'],m['size'], m['type']),
-				'		<b>Senses</b> {} <b>Per</b> {}\n'.format(m['Senses'].partition(' Perception ')[0],m['Senses'].partition(' Perception ')[2]),
-				'		<b>Speed</b> {}\n'.format(m['Speed']),
+				'		<b>Init</b> {}; {} {}\n'.format(m.Init, m.size, m.type),
+				'		<b>Senses</b> {} <b>Per</b> +{}\n'.format(m.Senses, m.Perception),
+				'		<b>Speed</b> {}\n'.format(m.Speed),
 				]
 
 	# DEFENSE
-	# adjust hp for my feat
-	hit_die = int(m['hp'].partition('(')[2].partition('d')[0])
-	total_hp = int(m['hp'].partition(' ')[0])+hit_die*2
 	defense = ['	defense:\n',
-				'		<b>AC</b> {}\n'.format(m['AC'].partition('(')[0]),
-				'		<b>HP</b>{} ({})'.format(total_hp,m['hp'].partition('(')[2].partition('+')[0]),
-				'		Fort +{}, Ref {}, Will {}\n'.format(int(m['Fort'])+2,m['Ref'],m['Will']),
+				'		<b>AC</b> {}\n'.format(m.AC),
+				'		<b>HP</b>{}'.format(m.hp),
+				'		Fort +{}, Ref {}, Will {}\n'.format(m.Fort,m.Ref,m.Will),
 				]
+	'''
 
-	if 'Celestial' in m.keys():
-		if hit_die > 4:
-			m['cr'] += 1 # CR increases by 1 if monster has 5+ HD
-		if 'SR' not in m.keys() or int(m['SR']) < m['cr']+5:
-				m['SR'] = m['cr'] +5
-
-		if hit_die < 5:
-			try:
-				m['Resist'] = m['Resist'] + ', cold 5, acid 5, electricity 5'
-			except:
-				m['Resist'] = 'cold 5, acid 5, electricity 5'
-		elif hit_die < 11:
-			try:
-				m['Resist'] = m['Resist'] + ', cold 10, acid 10, electricity 10'
-			except:
-				m['Resist'] = 'cold 10, acid 10, electricity 10'
-			try:
-				m['DR'] = m['DR'] + ', 5/evil'
-			except:
-				m['DR'] = '5/evil'
-		else:
-			try:
-				m['Resist'] = m['Resist'] + ', cold 15, acid 15, electricity 15'
-			except:
-				m['Resist'] = 'cold 15, acid 15, electricity 15'
-			try:
-				m['DR'] = m['DR'] + ', 10/evil'
-			except:
-				m['DR'] = '10/evil'
 
 	try:
-		defense[2] += ' <b>DR</b> {}'.format(m['DR'])
+		defense[2] += ' <b>DR</b> {}'.format(m.DR)
 	except:
 		pass
 	try:
-		defense[2] += ' <b>SR</b> {}'.format(m['SR'])
+		defense[2] += ' <b>SR</b> {}'.format(m.SR)
 	except:
 		pass
 	defense[2] += '\n'
 
 	try:
-		defense.append('		<b>Immune</b> {}\n'.format(m['Immune']))
+		defense.append('		<b>Immune</b> {}\n'.format(m.Immune))
 	except:
 		pass
 	try:
-		defense.append('		<b>Resist</b> {}\n'.format(m['Resist']))
+		defense.append('		<b>Resist</b> {}\n'.format(m.Resist))
 	except:
 		pass
 
 	# OFFENSE
 	# adjust CMB and CMD for my feat
-	if '(' in m['CMB']: #+10 (+14 grapple) problem: 31 (35 vs. trip, 37 vs. overrun)
-		base_cmb = int(m['CMB'].strip('+').partition(' (')[0])+2
-		extra_cmb = int(m['CMB'].partition('(')[2].partition(' ')[0].strip('+'))+2
-		cmb = "{} (+{} {}".format(base_cmb,extra_cmb,m['CMB'].partition('(')[2].partition(' ')[2])
+	if '(' in m.CMB: #+10 (+14 grapple) warning: 31 (35 vs. trip, 37 vs. overrun)
+		base_cmb = int(m.CMB.strip('+').partition(' (')[0])+2
+		extra_cmb = int(m.CMB.partition('(')[2].partition(' ')[0].strip('+'))+2
+		cmb = "{} (+{} {}".format(base_cmb,extra_cmb,m.CMB.partition('(')[2].partition(' ')[2])
 	else:
-		cmb = int(m['CMB'].strip('+'))+2
-	if '(' in m['CMD']: #27 (31 vs. trip)
-		base_cmd = int(m['CMD'].partition(' (')[0])+2
-		extra_cmd = int(m['CMD'].partition('(')[2].partition(' ')[0])+2
-		cmd = "{} ({} {}".format(base_cmd,extra_cmd,m['CMD'].partition('(')[2].partition(' ')[2])
+		cmb = int(m.CMB.strip('+'))+2
+	if '(' in m.CMD: #27 (31 vs. trip)
+		base_cmd = int(m.CMD.partition(' (')[0])+2
+		extra_cmd = int(m.CMD.partition('(')[2].partition(' ')[0])+2
+		cmd = "{} ({} {}".format(base_cmd,extra_cmd,m.CMD.partition('(')[2].partition(' ')[2])
 	else:
-		cmd = int(m['CMD'].strip('+'))+2
+		cmd = int(m.CMD.strip('+'))+2
 
 	offense = ['	offense:\n',]
 
 	if 'Reach' in m.keys():
-		offense.append('		<b>reach</b> {}'.format(m['Reach']))
+		offense.append('		<b>reach</b> {}\n'.format(m.Reach))
 	if 'Melee' in m.keys():
-		offense.append('		<b>Melee</b> {}\n'.format(m['Melee']))
+		offense.append('		<b>Melee</b> {}\n'.format(process_attacks(m.Melee)))
 	if 'Ranged' in m.keys():
-		offense.append('		<b>Ranged</b> {}\n'.format(m['Ranged']))
+		offense.append('		<b>Ranged</b> {}\n'.format(m.Ranged))
 	if 'Special Attacks' in m.keys():
-		offense.append('		<b>Special Attack</b> {}\n'.format(m['Special Attacks']))
+		offense.append('		<b>Special Attack</b> {}\n'.format(m.Special Attacks))
 	if 'Spell-Like Abilities' in m.keys():
-		offense.append('		<b>SLAs</b> {}\n'.format(m['Spell-Like Abilities']))
+		offense.append('		<b>SLAs</b> {}\n'.format(m.Spell-Like Abilities))
 
 	offense.extend(['\n',
 					'		<b>CMB</b> +{}\n'.format(cmb),
@@ -459,18 +538,18 @@ def print_card(m, spell_level):
 	# DETAILS
 	details = ['	describe:\n',]
 	if 'Skills' in m.keys():
-		details.append('\n		<b>Skills</b> {}\n'.format(m['Skills']))
+		details.append('\n		<b>Skills</b> {}\n'.format(m.Skills)) # want to drop boring skills
 	if 'Languages' in m.keys():
-		details.append('\n		<b>Languages</b> {}\n'.format(m['Languages']))
+		details.append('\n		<b>Languages</b> {}\n'.format(m.Languages))
 	if 'Feats' in m.keys():
-		details.append('\n		<b>Feats</b> {}\n'.format(m['Feats']))
+		details.append('\n		<b>Feats</b> {}\n'.format(m.Feats)) # want to drop boring feats
 	if 'Celestial' in m.keys():
 		details.append('\n		<b>Smite evil</b> 1/day as a swift action; adds +{} to atk and +{} to dmg against a target evil foe until dead\n'
-					.format(max(math.floor((float(m['Cha'])-10)/2),0),m['hp'].partition('(')[2].partition('d')[0]))
+					.format(max(math.floor((float(m.Cha)-10)/2),0),m.hp.partition('(')[2].partition('d')[0]))
 
 	details.append('	stats: Str {}, Dex {}, Con {}, Int {}, Wis {}, Cha {}; Base Atk {}\n'
-					.format(int(m['Str'])+4,m['Dex'],int(m['Con'])+4,m['Int'],m['Wis'],m['Cha'],m['Base Atk'].rstrip(';')))
-
+					.format(int(m.Str)+4,m.Dex,int(m.Con)+4,m.Int,m.Wis,m.Cha,m.Base Atk.rstrip(';')))
+	'''
 	'''
 				'\t\t<b>Grab</b> If you hit with bite, you can attempt to start a grapple as a free action without provoking an attack of opportunity. Each successful grapple check during successive rounds automatically deals bite damage.\n',
 				'\n',
@@ -479,13 +558,16 @@ def print_card(m, spell_level):
 				'\t\t<b>Rake</b> When you begin the turn grappling, you gain two free claw attacks against a grappled foe.\n',
 	'''
 
-	content = precombat + offense + defense + details
+	content = precombat + defense #+ offense + defense + details
 	print '\n\n'
 	pprint.pprint(content)
 	return content
 
 spell_level = "SM V"
 for url in monster_urls:
-	monster = scrape_url(url)
-	print_card(monster, spell_level)
+	monster_dict = scrape_url(url)
+	m = monster(monster_dict)
+	content = print_card(m, spell_level)
+	with open('card.txt','w') as c:
+		c.writelines(content)
 
